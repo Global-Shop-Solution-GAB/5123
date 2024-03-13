@@ -1,0 +1,314 @@
+Program.Sub.Preflight.Start
+V.Global.sSerial.Declare(String)
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+F.Intrinsic.Control.SetErrorHandler("Main_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+V.Local.sSql.Declare(String)
+V.Local.sEmpStart.Declare(String)
+V.Local.sWC.Declare(String)
+V.Local.iRet.Declare(Long)
+V.Local.i.Declare(Long)
+V.Local.sEndTime.Declare(String)
+V.Local.sJob.Declare(String)
+V.Local.lHour.Declare(Long)
+V.Local.lMinute.Declare(Long)
+V.Local.lSeconds.Declare(Long)
+V.Local.sPartID.Declare(String)
+V.Local.iC.Declare(Long)
+V.Local.sSerial.Declare(string)
+V.Local.sDate.Declare(String)
+V.Local.sTime.Declare(String)
+
+'Copied BY SFF 05292018
+'Copied from 4482 and changed connetion string 
+' this is for Dyna Holdings (Tackpoint) contact is Rob Friesen
+' integration with FactoryWiz, contact is Rich Hefner
+'this script connects to the factorywiz database and polls for valid work orders (job+suffix+seq) = cycledata.cdjob & unattended machine time records
+'it batches the times together into a single record per job and per polling interval.
+'cross referencing fo employee# in gss and workcenter is handled through payroll master comments 1 and 2. these employees are phantom(0 rate) employees.
+
+'F.ODBC.Connection!con.OpenConnection(V.Ambient.PDSN,V.Ambient.PUser,V.Ambient.PPass,999)
+F.ODBC.Connection!con.OpenCompanyConnection(999)
+F.ODBC.Connection!conFW.OpenConnection("Driver={MySQL ODBC 5.3 ANSI Driver};Server=192.168.48.67;Port=3306;Database=factorywiz;User=gss;Password=global;Option=3;")
+
+F.Intrinsic.Control.SelectCase(V.Caller.Hook)
+
+	F.Intrinsic.Control.CaseElse
+		'this is setup to run on Pre-Online Update, 
+		'we left it as else so it could be triggered from a custom menu item.
+		f.Intrinsic.UI.InvokeWaitDialog("Polling Unattended Time from FactoryWiz","FactoryWiz to GSS Running...")
+		f.Intrinsic.Control.CallSub(isrunning)
+
+		F.Intrinsic.String.Build("Select Job, Suffix From V_Job_Header Where  Date_Closed = '1900-01-01'","",V.Local.sSql)
+		F.Data.DataTable.CreateFromSQL("ATemp","con",V.Local.sSql,True)
+
+		F.Intrinsic.String.Build("Select Job, Suffix, Seq, Job+Suffix+Seq as JSS From V_Job_Operations","",V.Local.sSql)
+		F.Data.DataTable.CreateFromSQL("BTemp","con",V.Local.sSql,True)
+
+		F.Intrinsic.Control.If(V.DataTable.ATemp.RowCount--,>,-1,"AND",V.DataTable.BTemp.RowCount--,>,-1)
+			F.Intrinsic.Control.Try
+				F.Data.Linq.Join("InnerJoin","DataTable","ATemp*!*A","DataTable","BTemp*!*B","A.Job = B.Job and A.Suffix = B.Suffix","B.Job*!*B.Suffix*!*B.Seq*!*B.JSS","","B.Job","","Machine",True)
+			F.Intrinsic.Control.Catch
+				'catching error if no records match in the join to allow program to continue running
+			F.Intrinsic.Control.EndTry
+		F.Intrinsic.Control.EndIf
+
+		F.Data.DataTable.Close("BTemp")
+
+		F.Intrinsic.String.Build("Select a.CDLIID, b.CDJob, rtrim(ucase(b.CDCnc)) CDCnc, A.CDLISerial,A.CDLISecs, a.CDLIStart, a.CDLIFinish, a.CDLIOperator, a.CDLIGSProcessed from cyclelidata a left outer join cycledata b on a.CDLISerial = b.CDSerial Where a.CDLIGSProcessed = 0 and a.CDLISecs > 0 and a.CDLIOperator = 'Unattended' and length(b.CDJob) = 15","",V.Local.sSql)
+		F.Data.DataTable.CreateFromSQL("AMachine","conFW",V.Local.sSql,True)
+
+		F.Intrinsic.Control.If(V.DataTable.Machine.Exists,=,True)
+			F.Intrinsic.Control.If(V.DataTable.Machine.RowCount--,<>,-1)
+				F.Intrinsic.Control.If(V.DataTable.ATemp.RowCount--,<>,-1)
+					F.Intrinsic.Control.Try
+'						F.Data.Linq.Join("InnerJoin","DataTable","Machine*!*M","DataTable","AMachine*!*A","M.JSS = A.CDJob","A.CDLIID*!*M.Job*!*M.Suffix*!*M.Seq*!*A.CDCnc*!*A.CDLIStart*!*A.CDLIFinish*!*A.CDLIGSProcessed*!*A.CDLISerial","","A.CDCnc","","Factory",True)
+						F.Data.Linq.Join("InnerJoin","DataTable","Machine*!*M","DataTable","AMachine*!*A","M.JSS = A.CDJob","A.CDLIID*!*M.Job*!*M.Suffix*!*M.Seq*!*A.CDCnc*!*A.CDLISecs*!*A.CDLIGSProcessed*!*A.CDLISerial","","A.CDCnc","","Factory",True)
+					F.Intrinsic.Control.Catch
+
+					F.Intrinsic.Control.EndTry
+				F.Intrinsic.Control.EndIf
+			F.Intrinsic.Control.EndIf
+		F.Intrinsic.Control.EndIf
+
+		F.Intrinsic.Control.If(V.DataTable.Machine.Exists,=,True)
+			F.Data.DataTable.Close("Machine")
+		F.Intrinsic.Control.EndIf
+
+		F.Intrinsic.Control.If(V.DataTable.ATemp.Exists,=,True)
+			F.Data.DataTable.Close("ATemp")
+		F.Intrinsic.Control.EndIf
+
+		F.Intrinsic.String.Build("Select Employee, Comments_1, rtrim(ucase(Comments_2)) Comments_2 From V_Employee_Mstr","",V.Local.sSql)
+		F.Data.DataTable.CreateFromSQL("ATemp","con",V.Local.sSql,True)
+
+		F.Intrinsic.Control.If(V.DataTable.Factory.Exists,=,True)
+			F.Intrinsic.Control.If(V.DataTable.Factory.RowCount--,<>,-1)
+				F.Intrinsic.Control.Try
+					F.Data.Linq.Join("InnerJoin","DataTable","Factory*!*F","DataTable","ATemp*!*A","F.CDCnc = A.Comments_2","F.CDLIID*!*F.Job*!*F.Suffix*!*F.Seq*!*A.Employee*!*A.Comments_1*!*F.CDCnc*!*F.CDLISecs*!*F.CDLIGSProcessed*!*F.CDLISerial","","A.Employee","","Machine",True)
+				F.Intrinsic.Control.Catch
+
+				F.Intrinsic.Control.EndTry	
+			F.Intrinsic.Control.EndIf
+		F.Intrinsic.Control.EndIf
+
+		F.Data.DataTable.Close("ATemp")
+
+		F.Intrinsic.Control.If(V.DataTable.Machine.Exists,=,True)
+			F.Intrinsic.Control.CallSub(upload_labor,"Operator","Machine")
+		F.Intrinsic.Control.EndIf
+
+		F.Intrinsic.Control.If(V.DataTable.AMachine.Exists,=,True)
+			F.Intrinsic.Control.If(V.DataTable.AMachine.RowCount--,<>,-1)
+				'changing CDLIGSProcessed to 1
+				F.Data.DataTable.SetValue("AMachine",-1,"CDLIGSProcessed",1)
+				F.Data.DataTable.SaveToDB("AMachine","conFW","CycleLIData","CDLIID",256,"CDLIID@!@CDLIID*!*CDLIGSProcessed@!@CDLIGSProcessed")
+			F.Intrinsic.Control.EndIf
+		F.Intrinsic.Control.EndIf
+
+		F.Intrinsic.Control.CallSub(exit)
+
+F.Intrinsic.Control.EndSelect
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("Main_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_5123_Labor_Upload.g2u",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.CallSub(Exit)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.Main.End
+
+Program.Sub.Exit.Start
+F.Intrinsic.Control.SetErrorHandler("Exit_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+
+F.ODBC.Connection!con.Close
+F.ODBC.Connection!conFW.Close
+
+F.Intrinsic.Control.End
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("Exit_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_5123_Labor_Upload.g2u",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.End
+
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.Exit.End
+
+Program.Sub.Upload_Labor.Start
+F.Intrinsic.Control.SetErrorHandler("Upload_Labor_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+V.Local.sFile.Declare(String)
+V.Local.sLine.Declare(String)
+V.Local.sUpdateDate.Declare(String)
+V.Local.i.Declare(Long)
+V.Local.iC.Declare(Long)
+V.Local.sStart.Declare(String)
+V.Local.sEnd.Declare(String)
+V.Local.sSql.Declare(String)
+V.Local.sEmp.Declare(String)
+V.Local.lTemp.Declare(Long)
+V.Local.sTemp.Declare(String)
+V.Local.sFilter.Declare(String)
+V.Local.sStartTime.Declare(String)
+V.Local.sEndTime.Declare(String)
+V.Local.dEnd.Declare(Date)
+V.Local.fTemp.Declare(Float)
+V.Local.fMinutes.Declare(Float)
+V.Local.sHours.Declare(String)
+
+F.Intrinsic.String.Format(V.Ambient.Date,"MMDDYY",V.Local.sUpdateDate)
+
+F.Intrinsic.Control.SelectCase(V.Args.Operator)
+	F.Intrinsic.Control.Case("Machine")
+		F.Intrinsic.Control.If(V.DataTable.Machine.Exists,=,True)
+			F.Intrinsic.Control.If(V.DataView.Machine!Machine.Exists,=,True)
+				F.Data.DataView.Close("Machine","Machine")
+			F.Intrinsic.Control.EndIf
+
+			'creating distinct datatable
+			F.Data.DataView.Create("Machine","Machine")
+			F.Data.DataView.ToDataTableDistinct("Machine","Machine","TempMachine","Employee*!*Comments_1",True)
+
+			F.Intrinsic.Control.For(V.Local.iC,0,V.DataTable.TempMachine.RowCount--,1)
+				F.Intrinsic.Control.If(V.DataView.Machine!Machine.Exists,=,True)
+					F.Data.DataView.Close("Machine","Machine")
+				F.Intrinsic.Control.EndIf
+				
+				'creating dataview for each employee to get combine time
+				F.Intrinsic.String.Build("Employee = '{0}' and Comments_1 = '{1}'",V.DataTable.TempMachine(V.Local.iC).Employee!FieldValTrim,V.DataTable.TempMachine(V.Local.iC).Comments_1!FieldValTrim,V.Local.sFilter)
+				F.Intrinsic.Control.If(V.DataView.Machine!Machine.Exists)
+					F.Data.DataView.Close("Machine","Machine")
+				F.Intrinsic.Control.EndIf
+				F.Data.DataView.Create("Machine","Machine",22,V.Local.sFilter,"")
+				F.Intrinsic.Control.If(V.DataTable.MachineHours.Exists)
+					F.Data.DataTable.Close("MachineHours")
+				F.Intrinsic.Control.EndIf
+				F.Data.DataView.ToDataTable("Machine","Machine","MachineHours",True)
+				F.Data.DataTable.AddExpressionColumn("MachineHours","Hours","Float","Sum(CDLISECS)")
+				V.Local.sHours.Set(V.DataTable.MachineHours(V.DataTable.MachineHours.RowCount--).Hours!FieldVal)
+				F.Intrinsic.Math.Evaluate("[V.Local.sHours.Float]/60/60",v.Local.sHours)
+				F.Intrinsic.String.Format(V.Local.sHours,"###0.0000",V.Local.sHours)
+'				F.Intrinsic.String.Build("Employee = '{0}'",V.DataTable.TempMachine(V.Local.iC).Employee!FieldValTrim,V.Local.sFilter)
+'				F.Data.DataView.Create("Machine","Machine",22,V.Local.sFilter,"CDLIStart")
+				'looping through Machine datatable and fliping process flag to processed.
+'				F.Intrinsic.Control.For(V.Local.i,0,V.DataView.Machine!Machine.RowCount--,1)
+''					'getting employee number that was created for clocking machine time.
+'					F.Intrinsic.Control.If(V.Local.i,=,0)
+'						F.Intrinsic.String.Format(V.DataView.Machine!Machine(V.Local.i).CDLIStart!FieldValTrim,"HhNn",V.Local.sStartTime)
+'					F.Intrinsic.Control.EndIf
+
+'					F.Intrinsic.Date.DateDiff("N",V.DataView.Machine!Machine(V.Local.i).CDLIStart!FieldValTrim,V.DataView.Machine!Machine(V.Local.i).CDLIFinish!FieldValTrim,V.Local.fTemp)
+
+'					F.Intrinsic.Math.Add(V.Local.fMinutes,V.Local.fTemp,V.Local.fMinutes)
+
+'					F.Intrinsic.Control.If(V.Local.i,=,V.DataView.Machine!Machine.RowCount--)
+'						F.Intrinsic.Date.DateAdd("N",V.Local.fMinutes,V.DataView.Machine!Machine(0).CDLIStart!FieldValTrim,V.Local.dEnd)
+'						F.Intrinsic.String.Format(v.Local.dEnd,"HhNn",V.Local.sEndTime)
+'					F.Intrinsic.Control.EndIf
+'					'checking if the machine was only running for less than a min if so change it to show the machine was running for at least min.
+'					'there are times when the machine is running for less than a Min.
+
+'				F.Intrinsic.Control.Next(V.Local.i)
+
+				F.Intrinsic.Control.If(V.Local.iC,=,0)
+					'create line for upload
+					F.Intrinsic.String.Build("{1}{0}{2}{0}{3}{0}{4}{0}{5}{0}{6}{0}{7}{0}{8}{0}{9}{0}{10}{0}{11}{0}{12}{0}{13}{0}{14}{0}{15}",V.Ambient.Tab,V.Local.sUpdateDate.Trim,V.DataTable.TempMachine(V.Local.iC).Employee!FieldValTrim,V.DataView.Machine!Machine(V.DataView.Machine!Machine.RowCount--).Job!FieldValTrim,V.DataView.Machine!Machine(V.DataView.Machine!Machine.RowCount--).Suffix!FieldValTrim,V.DataView.Machine!Machine(V.DataView.Machine!Machine.RowCount--).Seq!FieldValTrim,V.DataView.Machine!Machine(V.DataView.Machine!Machine.RowCount--).Comments_1!FieldValTrim,V.Local.sHours,"N","D","","","R","0","0","",V.Local.sLine)
+				F.Intrinsic.Control.Else
+					F.Intrinsic.String.Build("{16}{17}{1}{0}{2}{0}{3}{0}{4}{0}{5}{0}{6}{0}{7}{0}{8}{0}{9}{0}{10}{0}{11}{0}{12}{0}{13}{0}{14}{0}{15}",V.Ambient.Tab,V.Local.sUpdateDate.Trim,V.DataTable.TempMachine(V.Local.iC).Employee!FieldValTrim,V.DataView.Machine!Machine(V.DataView.Machine!Machine.RowCount--).Job!FieldValTrim,V.DataView.Machine!Machine(V.DataView.Machine!Machine.RowCount--).Suffix!FieldValTrim,V.DataView.Machine!Machine(V.DataView.Machine!Machine.RowCount--).Seq!FieldValTrim,V.DataView.Machine!Machine(V.DataView.Machine!Machine.RowCount--).Comments_1!FieldValTrim,V.Local.sHours,"N","D","","","R","0","0","",V.Local.sLine,V.Ambient.NewLine,V.Local.sLine)
+				F.Intrinsic.Control.EndIf
+			F.Intrinsic.Control.Next(V.Local.iC)
+		F.Intrinsic.Control.Else
+			F.Intrinsic.Control.ExitSub
+		F.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.EndSelect
+
+'Load labor details
+F.Intrinsic.Control.If(V.Local.sLine.Trim,<>,"")
+	F.Intrinsic.String.Build("{0}\{1}{2}MOPEN.txt",V.Caller.FilesDir,V.Caller.CompanyCode,V.Caller.Terminal,V.Local.sFile)
+	F.Intrinsic.File.String2File(V.Local.sFile,V.Local.sLine)	
+	
+	f.Intrinsic.UI.Msgbox("labor file created")
+	
+	Function.Intrinsic.Debug.InvokeDebugger
+	Function.Intrinsic.Debug.Stop
+	
+	F.Intrinsic.Task.LaunchGSSSync("JB0455","-c",V.Local.sFile)
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("Upload_Labor_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_5123_Labor_Upload.g2u",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.CallSub(exit)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.Upload_Labor.End
+
+Program.Sub.isRunning.Start
+F.Intrinsic.Control.SetErrorHandler("isRunning_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+
+v.Local.sFile.Declare(string)
+v.Local.i.Declare(Long)
+v.Local.bCheck.Declare(Boolean)
+v.Local.sText.Declare(String)
+
+
+'we run the program async so it will not hold up online update - we check the PID and if it is stil running, we end the current program.
+f.Intrinsic.String.Build("{0}\5123.pid",v.Caller.FilesDir,v.Local.sFile)
+f.Intrinsic.File.Exists(v.Local.sFile,v.Local.bCheck)
+f.Intrinsic.Control.If(v.Local.bCheck,=,True)
+	f.Intrinsic.File.File2String(v.local.sFile,v.Local.sText)
+	f.Intrinsic.Task.PIDRunning(v.Local.sText.Long,v.Local.bCheck)
+	f.Intrinsic.Control.If(v.Local.bCheck,=,True)
+		'end program
+		F.Intrinsic.Control.CallSub(exit)
+
+	f.Intrinsic.Control.Else
+		'create file with current PID and continue running
+		f.Intrinsic.File.String2File(v.Local.sFile,v.Ambient.PID)	
+	f.Intrinsic.Control.EndIf
+f.Intrinsic.Control.Else
+	'create file with current PID and continue running
+	f.Intrinsic.File.String2File(v.Local.sFile,v.Ambient.PID)
+f.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("isRunning_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_5123_Labor_Upload.g2u",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.isRunning.End
+
+Program.Sub.Comments.Start
+${$0$}$$}$RLK$}$4/26/2017 1:31:01 PM$}$False
+${$3$}$0$}$$}$0$}$-1$}$$}$12:00:00 AM$}$Hard code load Lot Bin Screen w/ length and Width.
+Program.Sub.Comments.End
