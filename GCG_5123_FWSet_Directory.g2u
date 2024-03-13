@@ -1,0 +1,145 @@
+Program.Sub.ScreenSU.Start
+Gui.FormFWSetDir..Create
+Gui.FormFWSetDir..Caption("Set FWSet Directory")
+Gui.FormFWSetDir..Size(6555,1755)
+Gui.FormFWSetDir..MinX(0)
+Gui.FormFWSetDir..MinY(0)
+Gui.FormFWSetDir..Position(0,0)
+Gui.FormFWSetDir..BackColor(-2147483633)
+Gui.FormFWSetDir..MousePointer(0)
+Gui.FormFWSetDir..Event(UnLoad,FormFWSetDir_UnLoad)
+Gui.FormFWSetDir.lblFWSet.Create(Label,"FWSet Dir:",True,1935,255,0,105,255,True,0,"Arial",8,-2147483633,0)
+Gui.FormFWSetDir.txtFWSetDir.Create(TextBox,"",True,6135,300,0,105,450,True,0,"Arial",8,-2147483643,1)
+Gui.FormFWSetDir.txtFWSetDir.Event(GotFocus,txtFWSetDir_GotFocus)
+Gui.FormFWSetDir.txtFWSetDir.Event(Change,txtFWSetDir_Change)
+Gui.FormFWSetDir.cmdSave.Create(Button)
+Gui.FormFWSetDir.cmdSave.Size(855,375)
+Gui.FormFWSetDir.cmdSave.Position(105,855)
+Gui.FormFWSetDir.cmdSave.Caption("Save")
+Gui.FormFWSetDir.cmdSave.Event(Click,cmdSave_Click)
+Program.Sub.ScreenSU.End
+
+Program.Sub.Preflight.Start
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+F.Intrinsic.Control.Try
+	V.Local.sError.Declare(String,"")
+	V.Local.sDir.Declare(String,"")
+	
+	Gui.FormFWSetDir.cmdSave.Enabled(False)
+	
+	F.ODBC.Connection!Con.OpenCompanyConnection
+	F.ODBC.Connection!Con.ExecuteAndReturn("Select FWSet_Dir From GCG_5123_FWSet_Dir",V.Local.sDir)
+	F.ODBC.Connection!Con.Close
+	
+	Gui.FormFWSetDir.txtFWSetDir.Text(V.Local.sDir)
+	
+	Gui.FormFWSetDir..Show
+	
+	F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+		F.Intrinsic.String.Build("Project: {0}{1}Subroutine: {2}{1}Error Occurred {3} with description {4}","",V.Ambient.NewLine,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Local.sError)
+		F.Intrinsic.UI.Msgbox(V.Local.sError)
+		F.Intrinsic.Control.CallSub(FormFWSetDir_UnLoad)
+	F.Intrinsic.Control.EndIf
+Function.Intrinsic.Control.EndTry
+Program.Sub.Main.End
+
+Program.Sub.FormFWSetDir_UnLoad.Start
+F.Intrinsic.Control.Try
+	V.Local.sError.Declare(String,"")
+
+	F.Intrinsic.Control.If(V.ODBC.Connection!con.State,=,1)
+		F.ODBC.Connection!con.Close
+	F.Intrinsic.Control.EndIf
+	
+	F.Intrinsic.Control.End
+	
+	F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+		F.Intrinsic.String.Build("Project: {0}{1}Subroutine: {2}{1}Error Occurred {3} with description {4}","",V.Ambient.NewLine,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Local.sError)
+		F.Intrinsic.UI.Msgbox(V.Local.sError)
+		F.Intrinsic.Control.CallSub(FormFWSetDir_UnLoad)
+	F.Intrinsic.Control.EndIf
+Function.Intrinsic.Control.EndTry
+Program.Sub.FormFWSetDir_UnLoad.End
+
+Program.Sub.cmdSave_Click.Start
+F.Intrinsic.Control.Try
+	V.Local.sError.Declare(String,"")
+	V.Local.bCheck.Declare(Boolean,False)
+	V.Local.sSql.Declare(String,"")
+	
+	Gui.FormFWSetDir.cmdSave.Enabled(False)
+	
+	F.Intrinsic.File.DirExists(V.Screen.FormFWSetDir!txtFWSetDir.Text,V.Local.bCheck)
+	
+	F.Intrinsic.Control.If(V.Local.bCheck)
+		F.ODBC.Connection!Con.OpenCompanyConnection
+		F.ODBC.Connection!Con.OpenLocalRecordSetRW("Rst","Select FWSet_Dir From GCG_5123_FWSet_Dir")
+		F.Intrinsic.Control.If(V.ODBC.Con!Rst.EOF)
+			F.ODBC.Con!Rst.AddNew
+			F.ODBC.Con!Rst.Set!FWSet_Dir(V.Screen.FormFWSetDir!txtFWSetDir.Text)
+			F.ODBC.Con!Rst.Update
+		F.Intrinsic.Control.Else
+			F.Intrinsic.String.Build("Update GCG_5123_FWSet_Dir Set FWSet_Dir = '{0}'",V.Screen.FormFWSetDir!txtFWSetDir.Text,V.Local.sSql)
+			F.ODBC.Connection!Con.Execute(V.Local.sSql)
+		F.Intrinsic.Control.EndIf
+		F.ODBC.Con!Rst.Close
+		F.ODBC.Connection!Con.Close
+	F.Intrinsic.Control.Else
+		Gui.FormFWSetDir.txtFWSetDir.SelectAll
+		F.Intrinsic.UI.Msgbox("Not a Valid Directory......","Warning")
+	F.Intrinsic.Control.EndIf
+	
+	F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+		F.Intrinsic.String.Build("Project: {0}{1}Subroutine: {2}{1}Error Occurred {3} with description {4}","",V.Ambient.NewLine,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Local.sError)
+		F.Intrinsic.UI.Msgbox(V.Local.sError)
+		F.Intrinsic.Control.CallSub(FormFWSetDir_UnLoad)
+	F.Intrinsic.Control.EndIf
+Function.Intrinsic.Control.EndTry
+Program.Sub.cmdSave_Click.End
+
+Program.Sub.txtFWSetDir_GotFocus.Start
+F.Intrinsic.Control.Try
+	V.Local.sError.Declare(String,"")
+
+	Gui.FormFWSetDir.txtFWSetDir.SelectAll
+	
+	F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+		F.Intrinsic.String.Build("Project: {0}{1}Subroutine: {2}{1}Error Occurred {3} with description {4}","",V.Ambient.NewLine,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Local.sError)
+		F.Intrinsic.UI.Msgbox(V.Local.sError)
+		F.Intrinsic.Control.CallSub(FormFWSetDir_UnLoad)
+	F.Intrinsic.Control.EndIf
+Function.Intrinsic.Control.EndTry
+Program.Sub.txtFWSetDir_GotFocus.End
+
+Program.Sub.txtFWSetDir_Change.Start
+F.Intrinsic.Control.Try
+	V.Local.sError.Declare(String,"")
+
+	Gui.FormFWSetDir.cmdSave.Enabled(True)
+	
+	F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+		F.Intrinsic.String.Build("Project: {0}{1}Subroutine: {2}{1}Error Occurred {3} with description {4}","",V.Ambient.NewLine,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Local.sError)
+		F.Intrinsic.UI.Msgbox(V.Local.sError)
+		F.Intrinsic.Control.CallSub(FormFWSetDir_UnLoad)
+	F.Intrinsic.Control.EndIf
+Function.Intrinsic.Control.EndTry
+Program.Sub.txtFWSetDir_Change.End
+
+
