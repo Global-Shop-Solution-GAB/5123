@@ -1,0 +1,215 @@
+Program.Sub.Preflight.Start
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+F.Intrinsic.Control.Try
+	V.Local.sError.Declare(String,"")
+	
+	F.Intrinsic.Control.CallSub(Update_FW)
+	F.Intrinsic.Control.CallSub(Exit)
+	
+	F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+		F.Intrinsic.String.Build("Project: {0}{1}Subroutine: {2}{1}Error Occurred {3} with description {4}","GCG_5123_FW_Cmd.g2u",V.Ambient.NewLine,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Local.sError)
+		F.Intrinsic.UI.Msgbox(V.Local.sError)
+		F.Intrinsic.Control.CallSub(Exit)
+	F.Intrinsic.Control.EndIf
+Function.Intrinsic.Control.EndTry
+Program.Sub.Main.End
+
+Program.Sub.Exit.Start
+F.Intrinsic.Control.Try
+	V.Local.sError.Declare(String,"")
+
+	F.Intrinsic.Control.If(V.ODBC.Connection!Con.State,=,1)
+		F.ODBC.Connection!Con.Close
+	F.Intrinsic.Control.EndIf
+	
+	F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+		F.Intrinsic.String.Build("Project: {0}{1}Subroutine: {2}{1}Error Occurred {3} with description {4}","GCG_5123_FW_Cmd.g2u",V.Ambient.NewLine,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Local.sError)
+		F.Intrinsic.UI.Msgbox(V.Local.sError)
+		F.Intrinsic.Control.End
+	F.Intrinsic.Control.EndIf
+Function.Intrinsic.Control.EndTry
+Program.Sub.Exit.End
+
+Program.Sub.Update_FW.Start
+F.Intrinsic.Control.Try
+	V.Local.sError.Declare(String,"")
+	V.Local.iRet.Declare(Long,0)
+	V.Local.sCmd.Declare(String,"")
+	V.Local.iPid.Declare(Long,0)
+	V.Local.sComments2.Declare(String,"")
+	V.Local.sDir.Declare(String,"")
+	V.Local.sSql.Declare(String,"")
+	V.Local.sMachine.Declare(String,"")
+	V.Local.sJobSuffixSeq.Declare(String,"")
+	V.Local.sMsg.Declare(String,"")
+	
+	F.ODBC.Connection!Con.OpenCompanyConnection
+	
+	'query directory, if not configured then notify user.
+	F.ODBC.Connection!Con.ExecuteAndReturn("Select FWSet_Dir From GCG_5123_FWSet_Dir",V.Local.sDir)
+	f.Intrinsic.Control.If(v.Local.sDir.Trim,=,"")
+		f.Intrinsic.UI.Msgbox("Directory for FWSet.exe is NOT Configured, please see your Global Shop Administrator")
+		f.Intrinsic.Control.CallSub(Exit)
+	f.Intrinsic.Control.EndIf
+	
+	F.Intrinsic.Control.If(V.Local.sDir.Right1,=,"\")
+		F.Intrinsic.String.Build("{0}FWSet.exe",V.Local.sDir,V.Local.sDir)
+	F.Intrinsic.Control.Else
+		F.Intrinsic.String.Build("{0}\FWSet.exe",V.Local.sDir,V.Local.sDir)
+	F.Intrinsic.Control.EndIf
+	
+	F.Intrinsic.Control.SelectCase(V.Caller.Hook)
+		'Gui Start Job Post Hook
+		F.Intrinsic.Control.Case(15935)
+			F.Intrinsic.String.Build("Select Distinct Comments_2 From V_Employee_Mstr Where Comments_1 = '{0}'",V.Passed.009996.Trim,V.Local.sSql)
+			F.ODBC.Connection!Con.ExecuteAndReturn(V.Local.sSql,V.Local.sMachine)
+			V.Local.sMachine.Set(V.Local.sMachine.Trim)
+			F.Intrinsic.Control.If(V.Local.sMachine.Length,>,0)
+				F.Intrinsic.String.Build("Do you want to send Job {0} Suffix {1} Seq {2} to Factory Wiz?",V.Passed.009990.Trim,V.Passed.009991.Trim,V.Passed.009992.Trim,V.Local.sMsg)
+				F.Intrinsic.UI.Msgbox(V.Local.sMsg,"FactoryWiz",4,V.Local.iRet)
+				F.Intrinsic.Control.If(V.Local.iRet,=,6)
+					F.Intrinsic.String.Build("{0}{1}{2}",V.Passed.009990.Trim,V.Passed.009991.Trim,V.Passed.009992.Trim,V.Local.sJobSuffixSeq)
+					F.Intrinsic.String.Build("Select JobSuffixSeq From GCG_5123_FW_Jobs Where JobSuffixSeq = '{0}'",V.Local.sJobSuffixSeq,V.Local.sSql)
+					F.ODBC.Connection!Con.OpenLocalRecordSetRW("rstJob",V.Local.sSql)
+	
+					F.Intrinsic.Control.If(V.ODBC.Con!rstJob.EOF)
+						F.ODBC.Con!rstJob.AddNew
+						F.ODBC.Con!rstJob.Set!JobSuffixSeq(V.Local.sJobSuffixSeq)
+						F.ODBC.Con!rstJob.Update					
+					F.Intrinsic.Control.EndIf
+					
+					F.ODBC.Con!rstJob.Close
+					
+					f.Intrinsic.String.Build("{0} {1} {4}{2}{4} {4}{3}{4}",V.Local.sDir,"Job",V.Local.sMachine,V.Local.sJobSuffixSeq,v.Ambient.DblQuote,v.Local.sCmd)
+					
+					f.Intrinsic.Task.LaunchAsync(v.Local.sCmd,4,v.Local.iPid)
+					
+					f.Intrinsic.String.Build("{0} {1} {4}{2}{4} {4}{3}{4}",V.Local.sDir,"CNCOPERATOR",V.Local.sMachine,V.Passed.009994.Trim,v.Ambient.DblQuote,v.Local.sCmd)
+					
+					f.Intrinsic.Task.LaunchAsync(v.Local.sCmd,4,v.Local.iPid)
+			
+				F.Intrinsic.Control.EndIf
+			F.Intrinsic.Control.EndIf
+		
+		'Post Scan Hook
+		F.Intrinsic.Control.Case(15755)
+			F.Intrinsic.String.Build("Select Distinct Comments_2 From V_Employee_Mstr Where Comments_1 = '{0}'",V.Passed.009996.Trim,V.Local.sSql)
+			F.ODBC.Connection!Con.ExecuteAndReturn(V.Local.sSql,V.Local.sMachine)
+			V.Local.sMachine.Set(V.Local.sMachine.Trim)
+			F.Intrinsic.Control.If(V.Local.sMachine.Length,>,0)
+				F.Intrinsic.String.Build("Do you want to send Job {0} Suffix {1} Seq {2} to Factory Wiz?",V.Passed.009990.Trim,V.Passed.009991.Trim,V.Passed.009992.Trim,V.Local.sMsg)
+				F.Intrinsic.UI.Msgbox(V.Local.sMsg,"FactoryWiz",4,V.Local.iRet)
+				F.Intrinsic.Control.If(V.Local.iRet,=,6)
+					F.Intrinsic.String.Build("{0}{1}{2}",V.Passed.009990.Trim,V.Passed.009991.Trim,V.Passed.009992.Trim,V.Local.sJobSuffixSeq)
+					F.Intrinsic.String.Build("Select JobSuffixSeq From GCG_5123_FW_Jobs Where JobSuffixSeq = '{0}'",V.Local.sJobSuffixSeq,V.Local.sSql)
+					F.ODBC.Connection!Con.OpenLocalRecordSetRW("rstJob",V.Local.sSql)
+	
+					F.Intrinsic.Control.If(V.ODBC.Con!rstJob.EOF)
+						F.ODBC.Con!rstJob.AddNew
+						F.ODBC.Con!rstJob.Set!JobSuffixSeq(V.Local.sJobSuffixSeq)
+						F.ODBC.Con!rstJob.Update					
+					F.Intrinsic.Control.EndIf
+					
+					F.ODBC.Con!rstJob.Close
+					
+					f.Intrinsic.String.Build("{0} {1} {4}{2}{4} {4}{3}{4}",V.Local.sDir,"Job",V.Local.sMachine,V.Local.sJobSuffixSeq,v.Ambient.DblQuote,v.Local.sCmd)
+					
+					f.Intrinsic.Task.LaunchAsync(v.Local.sCmd,4,v.Local.iPid)
+					
+					f.Intrinsic.String.Build("{0} {1} {4}{2}{4} {4}{3}{4}",V.Local.sDir,"CNCOPERATOR",V.Local.sMachine,V.Passed.009994.Trim,v.Ambient.DblQuote,v.Local.sCmd)
+					
+					f.Intrinsic.Task.LaunchAsync(v.Local.sCmd,4,v.Local.iPid)
+			
+				F.Intrinsic.Control.EndIf
+			F.Intrinsic.Control.EndIf
+		'Gui Remove Job Hook
+		F.Intrinsic.Control.Case(15820)
+			F.Intrinsic.String.Build("Select Distinct Comments_2 From V_Employee_Mstr Where Comments_1 = '{0}'",V.Passed.009996.Trim,V.Local.sSql)
+			F.ODBC.Connection!Con.ExecuteAndReturn(V.Local.sSql,V.Local.sMachine)
+			F.Intrinsic.Control.If(V.Local.sMachine.Length,>,0)
+				F.Intrinsic.String.Build("{0}{1}{2}",V.Passed.009990.Trim,V.Passed.009991.Trim,V.Passed.009992.Trim,V.Local.sJobSuffixSeq)
+				F.Intrinsic.String.Build("Select JobSuffixSeq From GCG_5123_FW_Jobs Where JobSuffixSeq = '{0}'",V.Local.sJobSuffixSeq,V.Local.sSql)
+				F.ODBC.Connection!Con.OpenLocalRecordSetRO("rstJob",V.Local.sSql)
+				F.Intrinsic.Control.If(V.ODBC.Con!rstJob.EOF,=,False)
+				
+					f.Intrinsic.String.Build("{0} {1} {4}{2}{4} {4}{3}{4}",V.Local.sDir,"Job",V.Local.sMachine,"",v.Ambient.DblQuote,v.Local.sCmd)
+					
+					f.Intrinsic.Task.LaunchAsync(v.Local.sCmd,4,v.Local.iPid)
+					
+					f.Intrinsic.String.Build("{0} {1} {4}{2}{4} {4}{3}{4}",V.Local.sDir,"CNCOPERATOR",V.Local.sMachine,"UNATTENDED",v.Ambient.DblQuote,v.Local.sCmd)
+				
+					f.Intrinsic.Task.LaunchAsync(v.Local.sCmd,4,v.Local.iPid)
+				F.Intrinsic.Control.EndIf
+			
+				F.Intrinsic.String.Build("Delete From GCG_5123_FW_Jobs Where JobSuffixSeq = '{0}'",V.Local.sJobSuffixSeq,V.Local.sSql)
+				F.ODBC.Connection!Con.Execute(V.Local.sSql)
+				
+				F.ODBC.Con!rstJob.Close
+			F.Intrinsic.Control.EndIf
+			
+		'Gui Process Post Hook
+		F.Intrinsic.Control.Case(15890)
+			F.Intrinsic.Control.If(V.Passed.000008,=,"Y")
+				F.Intrinsic.String.Build("Select Distinct Comments_2 From V_Employee_Mstr Where Comments_1 = '{0}'",V.Passed.009996.Trim,V.Local.sSql)
+				F.ODBC.Connection!Con.ExecuteAndReturn(V.Local.sSql,V.Local.sMachine)
+				V.Local.sMachine.Set(V.Local.sMachine.Trim)
+				F.Intrinsic.Control.If(V.Local.sMachine.Length,>,0)
+					F.Intrinsic.String.Build("{0}{1}{2}",V.Passed.009990.Trim,V.Passed.009991.Trim,V.Passed.009992.Trim,V.Local.sJobSuffixSeq)
+					F.Intrinsic.String.Build("Select JobSuffixSeq From GCG_5123_FW_Jobs Where JobSuffixSeq = '{0}'",V.Local.sJobSuffixSeq,V.Local.sSql)
+					F.ODBC.Connection!Con.OpenLocalRecordSetRO("rstJob",V.Local.sSql)
+					
+					F.Intrinsic.Control.If(V.ODBC.Con!rstJob.EOF,=,False)
+	'					F.Intrinsic.String.Build("Do you want to set Job {0} Suffix {1} Seq {2} to Unattended?",V.Passed.009990.Trim,V.Passed.009991.Trim,V.Passed.009992.Trim,V.Local.sMsg)
+	'					F.Intrinsic.UI.Msgbox(V.Local.sMsg,"FactoryWiz",4,V.Local.iRet)
+	'					F.Intrinsic.Control.If(V.Local.iRet,=,6)	
+	'						
+	'						f.Intrinsic.String.Build("{0} {1} {4}{2}{4} {4}{3}{4}",V.Local.sDir,"CNCOPERATOR",V.Local.sMachine,"UNATTENDED",v.Ambient.DblQuote,v.Local.sCmd)
+	'					
+	'						f.Intrinsic.Task.LaunchAsync(v.Local.sCmd,4,v.Local.iPid)
+	'					f.Intrinsic.Control.Else
+							'Set Operator to Unattended
+							f.Intrinsic.String.Build("{0} {1} {4}{2}{4} {4}{3}{4}",V.Local.sDir,"CNCOPERATOR",V.Local.sMachine,"UNATTENDED",v.Ambient.DblQuote,v.Local.sCmd)
+							f.Intrinsic.Task.LaunchAsync(v.Local.sCmd,4,v.Local.iPid)
+							'Set Job to Blank
+							f.Intrinsic.String.Build("{0} {1} {4}{2}{4} {4}{3}{4}",V.Local.sDir,"Job",V.Local.sMachine,"",v.Ambient.DblQuote,v.Local.sCmd)
+							f.Intrinsic.Task.LaunchAsync(v.Local.sCmd,4,v.Local.iPid)
+							
+	'					F.Intrinsic.Control.EndIf
+					F.Intrinsic.Control.Else
+						f.Intrinsic.String.Build("{0} {1} {4}{2}{4} {4}{3}{4}",V.Local.sDir,"Job",V.Local.sMachine,"",v.Ambient.DblQuote,v.Local.sCmd)
+						
+						f.Intrinsic.Task.LaunchAsync(v.Local.sCmd,4,v.Local.iPid)
+						
+						f.Intrinsic.String.Build("{0} {1} {4}{2}{4} {4}{3}{4}",V.Local.sDir,"CNCOPERATOR",V.Local.sMachine,"UNATTENDED",v.Ambient.DblQuote,v.Local.sCmd)
+					
+						f.Intrinsic.Task.LaunchAsync(v.Local.sCmd,4,v.Local.iPid)
+					F.Intrinsic.Control.EndIf
+					
+					F.Intrinsic.String.Build("Delete From GCG_5123_FW_Jobs Where JobSuffixSeq = '{0}'",V.Local.sJobSuffixSeq,V.Local.sSql)
+					F.ODBC.Connection!Con.Execute(V.Local.sSql)
+					
+					F.ODBC.Con!rstJob.Close
+				F.Intrinsic.Control.EndIf
+			F.Intrinsic.Control.EndIf
+	F.Intrinsic.Control.EndSelect
+	
+	F.ODBC.Connection!Con.Close
+
+	F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+		F.Intrinsic.String.Build("Project: {0}{1}Subroutine: {2}{1}Error Occurred {3} with description {4}","GCG_5123_FW_Cmd.g2u",V.Ambient.NewLine,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Local.sError)
+		F.Intrinsic.UI.Msgbox(V.Local.sError)
+		F.Intrinsic.Control.CallSub(Exit)
+	F.Intrinsic.Control.EndIf
+Function.Intrinsic.Control.EndTry
+Program.Sub.Update_FW.End
